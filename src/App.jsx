@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { api } from "./api.js";
+import { GUIA, REGRA_DE_BOLSO } from "./guia.js";
 
 // ─────────────────────────────────────────────────────────────
 // JORNADA BACKEND — mapa prático do Breno
@@ -531,6 +532,29 @@ export default function JornadaBackend() {
               </a>
               <div style={st.pularBox}>⛔ {fase.pular}</div>
 
+              {GUIA[fase.id] && (
+                <details style={st.guiaBox}>
+                  <summary style={st.guiaSummary}>
+                    📋 guia de seções do curso — o que fazer e o que pular
+                  </summary>
+                  <div style={{ marginTop: 10 }}>
+                    {GUIA[fase.id].fazer.map((t, i) => (
+                      <div key={i} style={st.guiaItem}>
+                        <span style={{ color: "#7FB069", flexShrink: 0 }}>✔</span> {t}
+                      </div>
+                    ))}
+                    {GUIA[fase.id].pular.map((t, i) => (
+                      <div key={`p${i}`} style={{ ...st.guiaItem, color: "#B07A6A" }}>
+                        <span style={{ color: "#D96C4F", flexShrink: 0 }}>✖</span> {t}
+                      </div>
+                    ))}
+                    <div style={{ ...st.mono, fontSize: 11, color: "#5C4B33", marginTop: 8 }}>
+                      {REGRA_DE_BOLSO}
+                    </div>
+                  </div>
+                </details>
+              )}
+
               <div style={{ marginTop: 12 }}>
                 {fase.missoes.map((m) => {
                   const ok = !!feitas[m.id];
@@ -742,6 +766,28 @@ const st = {
     borderRadius: 5,
     padding: "7px 10px",
     marginTop: 4,
+  },
+  guiaBox: {
+    background: "#16110C",
+    border: "1px dashed #3A2F1F",
+    borderRadius: 6,
+    padding: "10px 12px",
+    marginTop: 10,
+  },
+  guiaSummary: {
+    fontFamily: "ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace",
+    fontSize: 12,
+    color: "#FFB454",
+    cursor: "pointer",
+  },
+  guiaItem: {
+    display: "flex",
+    gap: 8,
+    fontSize: 12.5,
+    color: "#C9B597",
+    padding: "3px 0",
+    lineHeight: 1.45,
+    fontFamily: "inherit",
   },
   missao: {
     display: "flex",
