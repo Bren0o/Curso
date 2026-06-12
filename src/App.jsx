@@ -182,12 +182,14 @@ export default function JornadaBackend() {
   const [confirmaReset, setConfirmaReset] = useState(false);
   const [user, setUser] = useState(null);
   const [apiDisponivel, setApiDisponivel] = useState(false);
+  const [githubDisponivel, setGithubDisponivel] = useState(false);
 
   // Sessão no backend próprio (cookie HttpOnly) — opcional, app funciona sem
   useEffect(() => {
     api.me().then(({ disponivel, user: u }) => {
       setApiDisponivel(disponivel);
       setUser(u);
+      if (disponivel) api.config().then(({ github }) => setGithubDisponivel(github));
     });
   }, []);
 
@@ -448,6 +450,16 @@ export default function JornadaBackend() {
                   >
                     {modoRegistro ? "já tenho conta" : "criar conta"}
                   </button>
+                  {githubDisponivel && (
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => api.entrarGitHub()}
+                      style={st.btnGitHub}
+                    >
+                      ⎇ GitHub
+                    </button>
+                  )}
                 </div>
                 {erroAuth && (
                   <div style={{ ...st.mono, fontSize: 12, color: "#D96C4F", marginTop: 8 }}>
@@ -647,6 +659,17 @@ const st = {
   },
   btnAuth: {
     background: "#FFB454",
+    color: "#14100B",
+    fontWeight: 700,
+    fontSize: 13,
+    padding: "8px 14px",
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  btnGitHub: {
+    background: "#EDE3D2",
     color: "#14100B",
     fontWeight: 700,
     fontSize: 13,

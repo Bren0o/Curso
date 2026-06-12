@@ -8,7 +8,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
-const { DATABASE_URL, PORT = 3000, NODE_ENV = "development" } = process.env;
+const {
+  DATABASE_URL,
+  GITHUB_CLIENT_ID,
+  GITHUB_CLIENT_SECRET,
+  PORT = 3000,
+  NODE_ENV = "development",
+} = process.env;
+
+// Login com GitHub é opcional: só ativa se as duas variáveis existirem
+const githubConfigurado = Boolean(GITHUB_CLIENT_ID && GITHUB_CLIENT_SECRET);
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL não definida — copie .env.example para .env e preencha");
@@ -22,6 +31,13 @@ const SESSAO_DIAS = 30;
 
 // Atrás do proxy reverso da host: respeita X-Forwarded-Proto/For (https, IP real)
 app.set("trust proxy", true);
+
+// URL pública descoberta da própria requisição — sem variável de ambiente.
+// Cobre proxies que usam X-Forwarded-Host e os que preservam o Host.
+const urlBase = (req) => {
+  const host = (req.get("x-forwarded-host") || req.get("host")).split(",")[0].trim();
+  return `${req.protocol}://${host}`;
+};
 
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
@@ -104,6 +120,67 @@ async function criarSessao(res, userId) {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// O frontend consulta para saber quais métodos de login oferecer
+app.get("/api/config", (_req, res) => {
+  res.json({ github: githubConfigurado });
+});
+
+// ── Auth: GitHub OAuth (opcional — convive com e-mail+senha) ──
+app.get("/api/auth/github", (req, res) => {
+  if (!githubConfigurado) return res.status(503).send("login com GitHub não configurado");
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie("oauth_state", state, { ...cookieOpts, maxAge: 10 * 60 * 1000 });
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
+    state,
+  });
+  res.redirect(`https://github.com/login/oauth/authorize?${params}`);
+});
+
+app.get(
+  "/api/auth/github/callback",
+  seguro(async (req, res) => {
+    const { code, state } = req.query;
+    // state confere com o cookie → bloqueia CSRF no fluxo OAuth
+    if (!code || !state || state !== req.cookies.oauth_state) {
+      return res.status(403).send("estado OAuth inválido — tente logar de novo");
+    }
+    res.clearCookie("oauth_state", cookieOpts);
+
+    // Troca o code pelo access token (client secret só existe aqui, no servidor)
+    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
+      }),
+    });
+    const { access_token } = await tokenRes.json();
+    if (!access_token) return res.status(401).send("falha na autenticação com o GitHub");
+
+    const ghRes = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${access_token}`, "User-Agent": "jornada-backend" },
+    });
+    const gh = await ghRes.json();
+    if (!gh.id) return res.status(401).send("falha ao obter usuário do GitHub");
+
+    const { rows } = await pool.query(
+      `insert into usuarios (github_id, username)
+       values ($1, $2)
+       on conflict (github_id) do update set username = excluded.username
+       returning id`,
+      [gh.id, gh.login]
+    );
+
+    await criarSessao(res, rows[0].id);
+    res.redirect("/");
+  })
+);
 
 // ── Auth: contas próprias no PostgreSQL (sem serviço externo) ──
 app.post(

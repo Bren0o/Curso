@@ -28,8 +28,23 @@ export const api = {
     }
   },
 
+  // Retorna { github } — quais métodos de login o servidor oferece
+  async config() {
+    try {
+      const res = await fetch("/api/config");
+      if (!res.ok) return { github: false };
+      return await res.json();
+    } catch {
+      return { github: false };
+    }
+  },
+
   registrar(nome, email, senha) {
     return autenticar("/api/auth/registrar", { nome, email, senha });
+  },
+
+  entrarGitHub() {
+    window.location.href = "/api/auth/github";
   },
 
   login(email, senha) {

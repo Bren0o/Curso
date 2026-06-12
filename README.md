@@ -35,9 +35,11 @@ Os arquivos finais ficam em `dist/` — em produção o próprio Express os serv
 ## Contas + progresso no banco próprio
 
 Sem backend configurado, o app funciona 100% com `localStorage`.
-Com backend, cada pessoa cria conta (nome, e-mail, senha) direto no site e o
-progresso vai para o PostgreSQL. **Nenhum serviço externo, nenhuma chave de
-API** — a única configuração é a `DATABASE_URL`.
+Com backend, há dois jeitos de logar (podem coexistir):
+
+- **E-mail + senha** — sempre ativo, só precisa da `DATABASE_URL`
+- **Entrar com GitHub** — opcional; o botão só aparece se
+  `GITHUB_CLIENT_ID` e `GITHUB_CLIENT_SECRET` estiverem configurados
 
 ### Variáveis de ambiente
 
@@ -46,7 +48,25 @@ Copie [`server/.env.example`](server/.env.example) para `server/.env`:
 ```
 DATABASE_URL=postgresql://usuario:senha@host:5432/banco?sslmode=no-verify
 NODE_ENV=production
+
+# opcionais (habilitam o botão GitHub):
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
 ```
+
+### Habilitar o login com GitHub
+
+1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**
+2. **Homepage URL:** `https://curso.erex.app`
+3. **Authorization callback URL:** `https://curso.erex.app/api/auth/github/callback`
+4. **Register application** → copie o `Client ID`
+5. **Generate a new client secret** → copie o secret (só aparece uma vez)
+6. Coloque os dois nas variáveis de ambiente e reinicie
+
+O Client ID/Secret identificam o **app**, não o usuário — configura uma vez
+e qualquer pessoa pode logar com a própria conta GitHub. A URL pública é
+detectada automaticamente da requisição; trocando de domínio, basta
+atualizar o callback no OAuth App.
 
 > 🔒 O `.env` está no `.gitignore` e **nunca** entra no repositório.
 > A senha do banco vive só no servidor.

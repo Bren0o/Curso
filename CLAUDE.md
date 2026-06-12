@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projeto
 
-"Jornada Backend" — mapa de estudos gamificado (página única em React) para o plano pessoal de aprendizado de backend do Breno. O progresso é salvo em `localStorage` (chave `jornada-backend-breno-v1`) e, opcionalmente, sincronizado em um backend próprio (`server/` — Express + PostgreSQL no RDS pessoal do Breno, contas com e-mail+senha). Deploy na host própria (curso.erex.app) via Docker com auto-deploy por webhook a cada push na `main`. O dono NÃO quer depender de serviços externos nem de variáveis de ambiente além da `DATABASE_URL`.
+"Jornada Backend" — mapa de estudos gamificado (página única em React) para o plano pessoal de aprendizado de backend do Breno. O progresso é salvo em `localStorage` (chave `jornada-backend-breno-v1`) e, opcionalmente, sincronizado em um backend próprio (`server/` — Express + PostgreSQL no RDS pessoal do Breno, contas com e-mail+senha e, opcionalmente, login com GitHub OAuth). Deploy na host própria (curso.erex.app) via Docker com auto-deploy por webhook a cada push na `main`. Única variável obrigatória: `DATABASE_URL`; `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` são opcionais (`GET /api/config` informa ao frontend se o botão GitHub deve aparecer).
 
 **Restrição do dono:** NÃO editar o cronograma dos cursos (`FASES`, `NIVEIS`, `FORA_DO_MAPA` em App.jsx) sem pedido explícito.
 
