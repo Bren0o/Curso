@@ -3,11 +3,25 @@
 Mapa de evolução gamificado para aprender backend de forma prática.
 30 min/dia · 6 fases · ErexHost como laboratório.
 
+## Arquitetura
+
+- **Frontend:** React + Vite (esta pasta) — funciona sozinho com `localStorage`
+- **Backend (opcional):** [`server/`](server/) — Express + PostgreSQL próprio,
+  com login via GitHub OAuth e progresso sincronizado por usuário
+
 ## Rodar localmente
 
 ```bash
+# frontend (funciona sozinho, progresso no localStorage)
 npm install
 npm run dev
+
+# backend (opcional — habilita login GitHub + sync no PostgreSQL)
+cd server
+cp .env.example .env   # preencher DATABASE_URL e chaves do GitHub
+npm install
+npm run migrate        # cria as tabelas no banco
+npm start              # http://localhost:3000 (o vite dev faz proxy de /api)
 ```
 
 ## Build de produção
@@ -16,53 +30,53 @@ npm run dev
 npm run build
 ```
 
-Os arquivos finais ficam em `dist/`.
+Os arquivos finais ficam em `dist/` — em produção o próprio Express os serve.
 
-## Login com GitHub + progresso na nuvem (opcional)
+## Login com GitHub + progresso no banco próprio
 
-Sem configurar nada, o app funciona com `localStorage`. Para sincronizar o
-progresso entre dispositivos via login com GitHub:
+Sem backend configurado, o app funciona 100% com `localStorage`.
+Com backend, cada usuário loga com GitHub e o progresso vai para o PostgreSQL.
 
-### 1. Criar o projeto no Supabase
-
-1. Crie uma conta em [supabase.com](https://supabase.com) e um projeto novo (plano free)
-2. No **SQL Editor**, cole e execute o conteúdo de [`supabase/schema.sql`](supabase/schema.sql)
-3. Em **Settings → API**, anote a `Project URL` e a `anon public key`
-
-### 2. Criar o OAuth App no GitHub
+### 1. Criar o OAuth App no GitHub
 
 1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**
-2. **Homepage URL:** a URL do seu site (ex.: `https://seu-app.vercel.app`)
-3. **Authorization callback URL:** `https://SEU-PROJETO.supabase.co/auth/v1/callback`
-   (o Supabase mostra essa URL exata em **Authentication → Providers → GitHub**)
+2. **Homepage URL:** a URL pública do site (ex.: `https://curso.seudominio.com`)
+3. **Authorization callback URL:** `https://curso.seudominio.com/api/auth/github/callback`
+   (para testar local: crie um segundo OAuth App com `http://localhost:3000/api/auth/github/callback`)
 4. Anote o `Client ID` e gere um `Client Secret`
 
-### 3. Conectar os dois
+### 2. Variáveis de ambiente
 
-No Supabase: **Authentication → Providers → GitHub** → ativar e colar
-`Client ID` + `Client Secret`.
-Em **Authentication → URL Configuration**, adicione a URL do site (e
-`http://localhost:5173` para testar localmente) em **Redirect URLs**.
-
-> 🔒 O Client Secret fica **só no painel do Supabase** — nunca no código.
-> A anon key é pública por design; quem protege os dados é o RLS
-> (cada usuário só lê/escreve a própria linha).
-
-### 4. Variáveis de ambiente
-
-Local: copie `.env.example` para `.env` e preencha.
-Na Vercel: **Settings → Environment Variables** com as mesmas duas chaves.
+Copie [`server/.env.example`](server/.env.example) para `server/.env` e preencha:
 
 ```
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
+DATABASE_URL=postgresql://usuario:senha@host:5432/banco?sslmode=no-verify
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+APP_URL=https://curso.seudominio.com
+NODE_ENV=production
 ```
 
-## Deploy na Vercel
+> 🔒 O `.env` está no `.gitignore` e **nunca** entra no repositório.
+> O Client Secret e a senha do banco vivem só no servidor. No banco,
+> cada usuário só acessa a própria linha (toda query filtra por `user_id`
+> da sessão), e as sessões são salvas **hasheadas**.
 
-1. Importe o repositório em [vercel.com/new](https://vercel.com/new) (framework: Vite, detectado automático)
-2. Adicione as duas variáveis de ambiente acima
-3. Deploy — e atualize a Homepage URL do OAuth App com a URL final
+### 3. Como funciona a sessão
+
+- Login → cookie `sessao` HttpOnly + Secure + SameSite=Lax, válido por 30 dias
+- O token é opaco e só o hash SHA-256 vai para o banco (tabela `sessoes`)
+- F5 não desloga; logout apaga a sessão do banco
+
+## Deploy na sua host (Docker)
+
+```bash
+docker build -t jornada-backend .
+docker run -d --name jornada -p 3000:3000 --env-file server/.env jornada-backend
+```
+
+Aponte o NGINX (proxy reverso + TLS) para a porta 3000 e use a URL pública
+no `APP_URL` e no OAuth App do GitHub.
 
 ## Fases
 

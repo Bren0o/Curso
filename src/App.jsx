@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "./supabase.js";
+import { api } from "./api.js";
 
 // ─────────────────────────────────────────────────────────────
 // JORNADA BACKEND — mapa prático do Breno
@@ -181,35 +181,30 @@ export default function JornadaBackend() {
   const [hora, setHora] = useState("20:00");
   const [confirmaReset, setConfirmaReset] = useState(false);
   const [user, setUser] = useState(null);
+  const [apiDisponivel, setApiDisponivel] = useState(false);
 
-  // Sessão do Supabase (login com GitHub) — opcional, app funciona sem
+  // Sessão no backend próprio (cookie HttpOnly) — opcional, app funciona sem
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_evento, session) => {
-      setUser(session?.user ?? null);
+    api.me().then(({ disponivel, user: u }) => {
+      setApiDisponivel(disponivel);
+      setUser(u);
     });
-    return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Ao logar: busca o progresso na nuvem e mescla com o local (união — nunca perde nada)
+  // Ao logar: busca o progresso no servidor e mescla com o local (união — nunca perde nada)
   useEffect(() => {
-    if (!supabase || !user) return;
+    if (!user) return;
     (async () => {
-      const { data, error } = await supabase
-        .from("progresso")
-        .select("feitas, hora")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (error) {
+      try {
+        const data = await api.carregarProgresso();
+        const mescladas = { ...feitas, ...(data?.feitas || {}) };
+        const horaFinal = data?.hora || hora;
+        setFeitas(mescladas);
+        setHora(horaFinal);
+        salvar(mescladas, horaFinal, user);
+      } catch (e) {
         setErroSave(true);
-        return;
       }
-      const mescladas = { ...feitas, ...(data?.feitas || {}) };
-      const horaFinal = data?.hora || hora;
-      setFeitas(mescladas);
-      setHora(horaFinal);
-      salvar(mescladas, horaFinal, user);
     })();
     // roda só quando o usuário loga/desloga
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,30 +235,23 @@ export default function JornadaBackend() {
     } catch (e) {
       setErroSave(true);
     }
-    if (supabase && usuario) {
-      supabase
-        .from("progresso")
-        .upsert({
-          user_id: usuario.id,
-          feitas: novasFeitas,
-          hora: novaHora,
-          updated_at: new Date().toISOString(),
+    if (usuario) {
+      api
+        .salvarProgresso(novasFeitas, novaHora)
+        .then((res) => {
+          if (!res.ok) setErroSave(true);
         })
-        .then(({ error }) => {
-          if (error) setErroSave(true);
-        });
+        .catch(() => setErroSave(true));
     }
   };
 
   const entrarComGitHub = () => {
-    supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: { redirectTo: window.location.origin },
-    });
+    api.entrar();
   };
 
   const sair = async () => {
-    await supabase.auth.signOut();
+    await api.sair();
+    setUser(null);
   };
 
   const alternar = (id) => {
@@ -379,13 +367,13 @@ export default function JornadaBackend() {
           )}
         </div>
 
-        {/* ── Login com GitHub (sincronização na nuvem) ── */}
-        {supabase && (
+        {/* ── Login com GitHub (sincronização no servidor) ── */}
+        {apiDisponivel && (
           <div style={st.nuvemCard}>
             {user ? (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <span style={{ ...st.mono, fontSize: 12.5, color: "#7FB069" }}>
-                  ☁ logado como @{user.user_metadata?.user_name || user.email} · progresso sincronizado
+                  ☁ logado como @{user.username} · progresso sincronizado
                 </span>
                 <button className="btn" onClick={sair} style={st.btnSair}>
                   sair
