@@ -11,7 +11,6 @@ const {
   DATABASE_URL,
   GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET,
-  APP_URL = "http://localhost:3000",
   PORT = 3000,
   NODE_ENV = "development",
 } = process.env;
@@ -25,6 +24,17 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL });
 const app = express();
 const producao = NODE_ENV === "production";
 const SESSAO_DIAS = 30;
+
+// Atrás do proxy reverso da host: respeita X-Forwarded-Proto (https)
+app.set("trust proxy", true);
+
+// URL pública descoberta da própria requisição — sem variável de ambiente;
+// se o domínio mudar, o callback do OAuth se adapta sozinho.
+// Cobre proxies que usam X-Forwarded-Host e os que preservam o Host.
+const urlBase = (req) => {
+  const host = (req.get("x-forwarded-host") || req.get("host")).split(",")[0].trim();
+  return `${req.protocol}://${host}`;
+};
 
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
@@ -80,7 +90,7 @@ app.get("/api/auth/github", (req, res) => {
   res.cookie("oauth_state", state, { ...cookieOpts, maxAge: 10 * 60 * 1000 });
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
-    redirect_uri: `${APP_URL}/api/auth/github/callback`,
+    redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
     state,
   });
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
@@ -104,7 +114,7 @@ app.get(
         client_id: GITHUB_CLIENT_ID,
         client_secret: GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `${APP_URL}/api/auth/github/callback`,
+        redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
       }),
     });
     const { access_token } = await tokenRes.json();
@@ -208,5 +218,5 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`jornada-backend rodando em ${APP_URL} (porta ${PORT}, ${NODE_ENV})`);
+  console.log(`jornada-backend rodando na porta ${PORT} (${NODE_ENV})`);
 });

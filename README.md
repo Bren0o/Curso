@@ -39,6 +39,9 @@ Com backend, cada usuário loga com GitHub e o progresso vai para o PostgreSQL.
 
 ### 1. Criar o OAuth App no GitHub
 
+> O Client ID/Secret identificam o **app**, não o usuário — configura uma
+> vez e qualquer pessoa pode logar com a própria conta GitHub.
+
 1. GitHub → **Settings → Developer settings → OAuth Apps → New OAuth App**
 2. **Homepage URL:** a URL pública do site (ex.: `https://curso.seudominio.com`)
 3. **Authorization callback URL:** `https://curso.seudominio.com/api/auth/github/callback`
@@ -53,9 +56,12 @@ Copie [`server/.env.example`](server/.env.example) para `server/.env` e preencha
 DATABASE_URL=postgresql://usuario:senha@host:5432/banco?sslmode=no-verify
 GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
-APP_URL=https://curso.seudominio.com
 NODE_ENV=production
 ```
+
+A URL pública é detectada automaticamente da requisição — não existe
+variável de URL. Se trocar de domínio, só atualize o callback no OAuth
+App do GitHub.
 
 > 🔒 O `.env` está no `.gitignore` e **nunca** entra no repositório.
 > O Client Secret e a senha do banco vivem só no servidor. No banco,
@@ -75,8 +81,8 @@ docker build -t jornada-backend .
 docker run -d --name jornada -p 3000:3000 --env-file server/.env jornada-backend
 ```
 
-Aponte o NGINX (proxy reverso + TLS) para a porta 3000 e use a URL pública
-no `APP_URL` e no OAuth App do GitHub.
+Aponte o NGINX (proxy reverso + TLS) para a porta 3000 e cadastre a URL
+pública no callback do OAuth App do GitHub.
 
 ## Fases
 
