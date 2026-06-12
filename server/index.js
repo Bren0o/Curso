@@ -34,9 +34,12 @@ app.set("trust proxy", true);
 
 // URL pública descoberta da própria requisição — sem variável de ambiente.
 // Cobre proxies que usam X-Forwarded-Host e os que preservam o Host.
+// Em produção força https: tem proxy que não repassa o X-Forwarded-Proto,
+// e o site público é sempre TLS.
 const urlBase = (req) => {
   const host = (req.get("x-forwarded-host") || req.get("host")).split(",")[0].trim();
-  return `${req.protocol}://${host}`;
+  const proto = producao ? "https" : req.protocol;
+  return `${proto}://${host}`;
 };
 
 app.use(express.json({ limit: "32kb" }));
