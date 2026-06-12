@@ -3,9 +3,9 @@
 
 create table if not exists usuarios (
   id         bigserial primary key,
-  github_id  bigint not null unique,
+  email      text not null unique,
   username   text not null,
-  avatar_url text,
+  senha_hash text not null,
   criado_em  timestamptz not null default now()
 );
 

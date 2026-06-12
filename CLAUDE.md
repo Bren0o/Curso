@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projeto
 
-"Jornada Backend" — mapa de estudos gamificado (página única em React) para o plano pessoal de aprendizado de backend do Breno. O progresso é salvo em `localStorage` (chave `jornada-backend-breno-v1`) e, opcionalmente, sincronizado em um backend próprio (`server/` — Express + PostgreSQL no RDS pessoal do Breno, login via GitHub OAuth). Deploy na host própria via Docker (NGINX na frente).
+"Jornada Backend" — mapa de estudos gamificado (página única em React) para o plano pessoal de aprendizado de backend do Breno. O progresso é salvo em `localStorage` (chave `jornada-backend-breno-v1`) e, opcionalmente, sincronizado em um backend próprio (`server/` — Express + PostgreSQL no RDS pessoal do Breno, contas com e-mail+senha). Deploy na host própria (curso.erex.app) via Docker com auto-deploy por webhook a cada push na `main`. O dono NÃO quer depender de serviços externos nem de variáveis de ambiente além da `DATABASE_URL`.
 
 **Restrição do dono:** NÃO editar o cronograma dos cursos (`FASES`, `NIVEIS`, `FORA_DO_MAPA` em App.jsx) sem pedido explícito.
 
@@ -30,8 +30,8 @@ Não há testes nem linter configurados.
 - **Dados estáticos no topo de App.jsx**: as constantes `FASES` (fases/missões com XP), `NIVEIS` (faixas de XP → nome do nível) e `FORA_DO_MAPA` definem todo o conteúdo. Para alterar conteúdo do mapa, edite essas constantes — o resto da UI deriva delas (`XP_TOTAL` é calculado por reduce).
 - **Estilos inline** via o objeto `st` no final de App.jsx (estética "terminal âmbar/CRT"), mais um pequeno bloco `<style>` para keyframes e hovers. Não há Tailwind nem CSS externo.
 - **Persistência**: `salvar()` grava `{ feitas, hora }` no localStorage a cada interação e, se logado, faz `PUT /api/progresso`; falha de gravação mostra aviso (`erroSave`). Ao mudar a estrutura dos dados salvos, versione a `STORAGE_KEY` e migre o schema SQL.
-- **Backend (opcional)**: [server/index.js](server/index.js) — Express único que faz o OAuth do GitHub (client secret só no servidor), sessões opacas de 30 dias (cookie HttpOnly+Secure+SameSite=Lax; só o hash SHA-256 vai para a tabela `sessoes`), API de progresso (toda query filtra por `user_id` da sessão) e serve o `dist/`. Schema em [server/schema.sql](server/schema.sql), aplicado via `npm run migrate`. O frontend detecta o backend em runtime ([src/api.js](src/api.js) → `GET /api/me`): sem backend, roda só com localStorage e esconde o card de login. Ao logar, progresso local e do servidor são mesclados por união (nunca se perde missão marcada).
-- **Segredos**: `DATABASE_URL` (RDS pessoal) e chaves do GitHub vivem só em `server/.env` (gitignored; modelo em [server/.env.example](server/.env.example)). NUNCA commitar connection strings ou secrets — confira o staged antes de todo commit.
+- **Backend (opcional)**: [server/index.js](server/index.js) — Express único com contas próprias (registro/login com e-mail+senha, bcrypt custo 12, mensagem genérica no login, bloqueio em memória após 5 falhas/15min por IP e por conta), sessões opacas de 30 dias (cookie HttpOnly+Secure+SameSite=Lax; só o hash SHA-256 vai para a tabela `sessoes`), API de progresso (toda query filtra por `user_id` da sessão) e serve o `dist/`. Schema em [server/schema.sql](server/schema.sql), aplicado via `npm run migrate`. O frontend detecta o backend em runtime ([src/api.js](src/api.js) → `GET /api/me`): sem backend, roda só com localStorage e esconde o card de conta. Ao logar, progresso local e do servidor são mesclados por união (nunca se perde missão marcada).
+- **Segredos**: `DATABASE_URL` (RDS pessoal) vive só em `server/.env` (gitignored; modelo em [server/.env.example](server/.env.example)). NUNCA commitar connection strings ou secrets — confira o staged antes de todo commit.
 
 ## Convenções
 

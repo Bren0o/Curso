@@ -1,19 +1,14 @@
-// Jornada Backend — servidor: OAuth GitHub + sessões + progresso no PostgreSQL
+// Jornada Backend — servidor: contas próprias (e-mail+senha) + progresso no PostgreSQL
 import "dotenv/config";
 import express from "express";
 import cookieParser from "cookie-parser";
+import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
-const {
-  DATABASE_URL,
-  GITHUB_CLIENT_ID,
-  GITHUB_CLIENT_SECRET,
-  PORT = 3000,
-  NODE_ENV = "development",
-} = process.env;
+const { DATABASE_URL, PORT = 3000, NODE_ENV = "development" } = process.env;
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL não definida — copie .env.example para .env e preencha");
@@ -25,16 +20,8 @@ const app = express();
 const producao = NODE_ENV === "production";
 const SESSAO_DIAS = 30;
 
-// Atrás do proxy reverso da host: respeita X-Forwarded-Proto (https)
+// Atrás do proxy reverso da host: respeita X-Forwarded-Proto/For (https, IP real)
 app.set("trust proxy", true);
-
-// URL pública descoberta da própria requisição — sem variável de ambiente;
-// se o domínio mudar, o callback do OAuth se adapta sozinho.
-// Cobre proxies que usam X-Forwarded-Host e os que preservam o Host.
-const urlBase = (req) => {
-  const host = (req.get("x-forwarded-host") || req.get("host")).split(",")[0].trim();
-  return `${req.protocol}://${host}`;
-};
 
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
@@ -83,70 +70,101 @@ const exigeLogin = (req, res, next) => {
   next();
 };
 
-// ── OAuth GitHub ──
-app.get("/api/auth/github", (req, res) => {
-  if (!GITHUB_CLIENT_ID) return res.status(503).send("login não configurado");
-  const state = crypto.randomBytes(16).toString("hex");
-  res.cookie("oauth_state", state, { ...cookieOpts, maxAge: 10 * 60 * 1000 });
-  const params = new URLSearchParams({
-    client_id: GITHUB_CLIENT_ID,
-    redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
-    state,
-  });
-  res.redirect(`https://github.com/login/oauth/authorize?${params}`);
-});
+// ── Rate limiting em memória: bloqueia após 5 falhas por 15 min ──
+const tentativas = new Map();
+const JANELA_MS = 15 * 60 * 1000;
 
-app.get(
-  "/api/auth/github/callback",
+function bloqueado(chave, max = 5) {
+  const t = tentativas.get(chave);
+  if (!t) return false;
+  if (Date.now() - t.inicio > JANELA_MS) {
+    tentativas.delete(chave);
+    return false;
+  }
+  return t.n >= max;
+}
+
+function registrarFalha(chave) {
+  const t = tentativas.get(chave) || { n: 0, inicio: Date.now() };
+  t.n++;
+  tentativas.set(chave, t);
+}
+
+// ── Sessão: token opaco no cookie, só o hash vai para o banco ──
+async function criarSessao(res, userId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  await pool.query(
+    `insert into sessoes (token_hash, user_id, expira_em)
+     values ($1, $2, now() + ($3 || ' days')::interval)`,
+    [hash(token), userId, SESSAO_DIAS]
+  );
+  // higiene: aproveita para limpar sessões vencidas
+  pool.query(`delete from sessoes where expira_em < now()`).catch(() => {});
+  res.cookie("sessao", token, { ...cookieOpts, maxAge: SESSAO_DIAS * 24 * 3600 * 1000 });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ── Auth: contas próprias no PostgreSQL (sem serviço externo) ──
+app.post(
+  "/api/auth/registrar",
   seguro(async (req, res) => {
-    const { code, state } = req.query;
-    // state confere com o cookie → bloqueia CSRF no fluxo OAuth
-    if (!code || !state || state !== req.cookies.oauth_state) {
-      return res.status(403).send("estado OAuth inválido — tente logar de novo");
+    if (bloqueado(`reg:${req.ip}`, 10)) {
+      return res.status(429).json({ erro: "muitas tentativas — aguarde 15 minutos" });
     }
-    res.clearCookie("oauth_state", cookieOpts);
+    const { nome, email, senha } = req.body || {};
+    const emailNorm = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const nomeOk = typeof nome === "string" && nome.trim().length >= 1 && nome.trim().length <= 50;
+    const senhaOk = typeof senha === "string" && senha.length >= 8 && senha.length <= 100;
+    if (!nomeOk || !senhaOk || !EMAIL_RE.test(emailNorm) || emailNorm.length > 254) {
+      return res.status(400).json({ erro: "dados inválidos — senha precisa de 8+ caracteres" });
+    }
 
-    // Troca o code pelo access token (client secret só existe aqui, no servidor)
-    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code,
-        redirect_uri: `${urlBase(req)}/api/auth/github/callback`,
-      }),
-    });
-    const { access_token } = await tokenRes.json();
-    if (!access_token) return res.status(401).send("falha na autenticação com o GitHub");
+    const senhaHash = await bcrypt.hash(senha, 12);
+    const { rows } = await pool.query(
+      `insert into usuarios (email, username, senha_hash)
+       values ($1, $2, $3)
+       on conflict (email) do nothing
+       returning id, username`,
+      [emailNorm, nome.trim(), senhaHash]
+    );
+    if (!rows[0]) {
+      registrarFalha(`reg:${req.ip}`);
+      return res.status(409).json({ erro: "e-mail já cadastrado — use o entrar" });
+    }
 
-    const ghRes = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${access_token}`, "User-Agent": "jornada-backend" },
-    });
-    const gh = await ghRes.json();
-    if (!gh.id) return res.status(401).send("falha ao obter usuário do GitHub");
+    await criarSessao(res, rows[0].id);
+    res.json({ user: { username: rows[0].username } });
+  })
+);
+
+app.post(
+  "/api/auth/login",
+  seguro(async (req, res) => {
+    const { email, senha } = req.body || {};
+    const emailNorm = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const chaves = [`login:${req.ip}`, `login:${emailNorm}`];
+    if (chaves.some((c) => bloqueado(c))) {
+      return res.status(429).json({ erro: "muitas tentativas — aguarde 15 minutos" });
+    }
+    if (!EMAIL_RE.test(emailNorm) || typeof senha !== "string") {
+      return res.status(401).json({ erro: "E-mail ou senha incorretos." });
+    }
 
     const { rows } = await pool.query(
-      `insert into usuarios (github_id, username, avatar_url)
-       values ($1, $2, $3)
-       on conflict (github_id) do update
-         set username = excluded.username, avatar_url = excluded.avatar_url
-       returning id`,
-      [gh.id, gh.login, gh.avatar_url]
+      `select id, username, senha_hash from usuarios where email = $1`,
+      [emailNorm]
     );
+    // mensagem genérica: não revela se o e-mail existe
+    const ok = rows[0] && (await bcrypt.compare(senha, rows[0].senha_hash));
+    if (!ok) {
+      chaves.forEach(registrarFalha);
+      return res.status(401).json({ erro: "E-mail ou senha incorretos." });
+    }
 
-    // Sessão opaca: token aleatório no cookie, só o hash vai para o banco
-    const token = crypto.randomBytes(32).toString("hex");
-    await pool.query(
-      `insert into sessoes (token_hash, user_id, expira_em)
-       values ($1, $2, now() + ($3 || ' days')::interval)`,
-      [hash(token), rows[0].id, SESSAO_DIAS]
-    );
-    // higiene: aproveita o login para limpar sessões vencidas
-    pool.query(`delete from sessoes where expira_em < now()`).catch(() => {});
-
-    res.cookie("sessao", token, { ...cookieOpts, maxAge: SESSAO_DIAS * 24 * 3600 * 1000 });
-    res.redirect("/");
+    chaves.forEach((c) => tentativas.delete(c));
+    await criarSessao(res, rows[0].id);
+    res.json({ user: { username: rows[0].username } });
   })
 );
 

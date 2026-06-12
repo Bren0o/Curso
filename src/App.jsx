@@ -245,8 +245,28 @@ export default function JornadaBackend() {
     }
   };
 
-  const entrarComGitHub = () => {
-    api.entrar();
+  const [modoRegistro, setModoRegistro] = useState(false);
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [erroAuth, setErroAuth] = useState("");
+  const [enviandoAuth, setEnviandoAuth] = useState(false);
+
+  const enviarAuth = async (e) => {
+    e.preventDefault();
+    setErroAuth("");
+    setEnviandoAuth(true);
+    try {
+      const u = modoRegistro
+        ? await api.registrar(nome, email, senha)
+        : await api.login(email, senha);
+      setUser(u);
+      setSenha("");
+    } catch (err) {
+      setErroAuth(err.message);
+    } finally {
+      setEnviandoAuth(false);
+    }
   };
 
   const sair = async () => {
@@ -367,27 +387,74 @@ export default function JornadaBackend() {
           )}
         </div>
 
-        {/* ── Login com GitHub (sincronização no servidor) ── */}
+        {/* ── Conta (sincronização no servidor) ── */}
         {apiDisponivel && (
           <div style={st.nuvemCard}>
             {user ? (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <span style={{ ...st.mono, fontSize: 12.5, color: "#7FB069" }}>
-                  ☁ logado como @{user.username} · progresso sincronizado
+                  ☁ logado como {user.username} · progresso sincronizado
                 </span>
                 <button className="btn" onClick={sair} style={st.btnSair}>
                   sair
                 </button>
               </div>
             ) : (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                <span style={{ ...st.mono, fontSize: 12.5, color: "#8A6D3F" }}>
-                  // logue para salvar na nuvem e acessar de qualquer lugar
-                </span>
-                <button className="btn" onClick={entrarComGitHub} style={st.btnGitHub}>
-                  ⎇ Entrar com GitHub
-                </button>
-              </div>
+              <form onSubmit={enviarAuth}>
+                <div style={{ ...st.mono, fontSize: 12, color: "#8A6D3F", marginBottom: 8 }}>
+                  // {modoRegistro ? "crie sua conta" : "entre"} para salvar o progresso na nuvem
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {modoRegistro && (
+                    <input
+                      style={st.inputAuth}
+                      placeholder="nome"
+                      value={nome}
+                      onChange={(e) => setNome(e.target.value)}
+                      required
+                      maxLength={50}
+                    />
+                  )}
+                  <input
+                    style={st.inputAuth}
+                    type="email"
+                    placeholder="e-mail"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                  <input
+                    style={st.inputAuth}
+                    type="password"
+                    placeholder={modoRegistro ? "senha (mín. 8)" : "senha"}
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                    required
+                    minLength={modoRegistro ? 8 : undefined}
+                    autoComplete={modoRegistro ? "new-password" : "current-password"}
+                  />
+                  <button className="btn" type="submit" disabled={enviandoAuth} style={st.btnAuth}>
+                    {enviandoAuth ? "..." : modoRegistro ? "criar conta" : "entrar"}
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => {
+                      setModoRegistro(!modoRegistro);
+                      setErroAuth("");
+                    }}
+                    style={st.btnSair}
+                  >
+                    {modoRegistro ? "já tenho conta" : "criar conta"}
+                  </button>
+                </div>
+                {erroAuth && (
+                  <div style={{ ...st.mono, fontSize: 12, color: "#D96C4F", marginTop: 8 }}>
+                    ! {erroAuth}
+                  </div>
+                )}
+              </form>
             )}
           </div>
         )}
@@ -567,8 +634,19 @@ const st = {
     padding: "12px 18px",
     marginBottom: 14,
   },
-  btnGitHub: {
-    background: "#EDE3D2",
+  inputAuth: {
+    background: "#0E0B07",
+    border: "1px solid #3A2F1F",
+    borderRadius: 5,
+    color: "#EDE3D2",
+    padding: "7px 10px",
+    fontFamily: "inherit",
+    fontSize: 13,
+    minWidth: 0,
+    flex: "1 1 120px",
+  },
+  btnAuth: {
+    background: "#FFB454",
     color: "#14100B",
     fontWeight: 700,
     fontSize: 13,

@@ -3,6 +3,17 @@
 
 const json = { "Content-Type": "application/json" };
 
+async function autenticar(caminho, corpo) {
+  const res = await fetch(caminho, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify(corpo),
+  });
+  const dados = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(dados.erro || "falha na autenticação");
+  return dados.user;
+}
+
 export const api = {
   // Retorna { disponivel, user } — disponivel=false quando não há backend
   async me() {
@@ -17,6 +28,14 @@ export const api = {
     }
   },
 
+  registrar(nome, email, senha) {
+    return autenticar("/api/auth/registrar", { nome, email, senha });
+  },
+
+  login(email, senha) {
+    return autenticar("/api/auth/login", { email, senha });
+  },
+
   async carregarProgresso() {
     const res = await fetch("/api/progresso");
     if (!res.ok) throw new Error("falha ao carregar progresso");
@@ -29,10 +48,6 @@ export const api = {
       headers: json,
       body: JSON.stringify({ feitas, hora }),
     });
-  },
-
-  entrar() {
-    window.location.href = "/api/auth/github";
   },
 
   async sair() {
